@@ -1,0 +1,1 @@
+"./main.obj" "./F2802x_GlobalVariableDefs.obj" "./F2802x_CodeStartBranch.obj" "../F28027_customized.cmd" "../F2802x_Headers_nonBIOS.cmd" -l"libc.a" 

@@ -1,0 +1,519 @@
+/*
+ * Author: Marty Alcala
+ * Lab 7, Task2
+ * main.c
+ */
+
+#define pi 3.14
+
+#include "F2806x_Device.h"
+#include "math.h"
+
+void SysClkInit();
+void TimerInit();
+void ADCInit();
+void PWMInit();
+void QEPInit();
+void SetMotorVoltage(float32 desiredVoltage);
+void InterruptInit();
+void ControlSysInit();
+void UpdateStateVariables();
+void ServiceWatchdog();
+interrupt void TimerIsr(void);
+interrupt void AdcIsr(void);
+float32 dataArrayV[1000]; // Holds the first 800 measurements of the motor voltage
+float32 dataArrayI[1000]; // Holds the first 800 measurements of the motor current
+float32 dataArrayP[1000]; // Holds the first 800 measurements of the motor position
+Uint16 dataIndex; // The current index in dataArrayV and dataArrayI
+Uint16 measuredValueI; // Holds the current measurement of the motor current
+float32 motorVoltage = 20;  // Holds the current setting of the motor voltage
+Uint16 timerCounter = 0; // Let's us know how many times we have been in the timer ISR
+Uint32 measuredValueP; // The measured value of position
+
+//plant simulation model parameters
+float32 L = 0.014;                    	// motor inductance (fixed)
+float32 R = 7.6;                        // motor resistance (fixed)
+float32 K = 0.16;                       // motor magnetic coefficient (fixed)
+float32 J = 28e-6;                      // motor/load inertia (load dependent)
+float32 F = 1.9e-4;                     // motor/load friction (load dependent)
+
+// plant design model parameters
+float32 Jhat;                         	// assumed vs true parameter mismatch
+float32 Fhat;                         	// assumed vs true parameter mismatch
+float32 alpha;      					// design model A matrix coefficient
+float32 beta;                  			// design model B matrix coefficient
+
+// controller design parameters
+float32 Vdc;                           	// power supply voltage
+float32 I_leg_max;                      // converter leg current bound
+float32 T;                         		// controller period
+float32 lambda_r;                      	// regulator bandwidth parameter
+float32 lambda_e;              			// estimator bandwidth parameter
+
+// gain parameters
+float32 K11;
+float32 K12;
+float32 K2;
+float32 L1;
+float32 L2;
+
+// state variables
+float32 x1 = 0;
+float32 x2 = 0;
+float32 sigma = 0;
+
+// desired output and actual output
+float32 u = 0;
+float32 r = 0;
+float32 y = 0;
+
+// reference shaping
+float32 Thetai;
+float32 Thetaf;
+float32 ThetaTravel;
+float32 omegax;
+float32 Tx;
+
+float32 ThetaDotCruise;
+float32 ThetaDoubleDotAccel;
+
+float32 taccel;
+float32 tcruise;
+
+float32 TimeTravel;
+float32 t;
+
+void main(void) {
+
+	// Enable write access protected registers
+	EALLOW;
+
+	// Disable the watchdog register so that we can have an
+	// arbitrarily long initialization procedure
+	SysCtrlRegs.WDCR = 0x0068;
+
+	SysClkInit();
+	ADCInit();
+	TimerInit();
+	InterruptInit();
+	PWMInit();
+	QEPInit();
+	ControlSysInit();
+
+	// Reenable the watchdog register
+	SysCtrlRegs.WDCR = 0x0028;
+
+	// Revoke write access to protected registers
+	EDIS;
+
+	// Set dataIndex to 0 - will be incremented with each ADC interrupt
+	dataIndex = 0;
+
+	// Start the timer
+	CpuTimer0Regs.TCR.bit.TSS = 0;
+	//SetMotorVoltage(20);
+	while(1){
+		ServiceWatchdog();
+	}
+
+}
+
+
+void SysClkInit(){
+
+	// Set the system clock to 90MHz
+
+	// Check to see if divsel is either 2 or 3
+	if((SysCtrlRegs.PLLSTS.bit.DIVSEL == 3) || (SysCtrlRegs.PLLSTS.bit.DIVSEL == 2)){
+		// If so, set it to 0
+		SysCtrlRegs.PLLSTS.bit.DIVSEL = 0;
+	}
+
+	// Disable failed oscillator detect logic
+	SysCtrlRegs.PLLSTS.bit.MCLKOFF = 1;
+
+	// Set the factor fosc is multiplied by
+	SysCtrlRegs.PLLCR.bit.DIV = 9;
+
+	//Check if SysCtrlRegs.PLLSTS.bit.PLLLOCKS is 1 (If not, wait for it to lock)
+	while(SysCtrlRegs.PLLSTS.bit.PLLLOCKS != 1){
+		// wait for the register to lock
+	}
+
+	// Re-enable failed oscillator detect logic
+	SysCtrlRegs.PLLSTS.bit.MCLKOFF = 0;
+
+	// Set the factor fosc is divided by (3 means divided by 1)
+	SysCtrlRegs.PLLSTS.bit.DIVSEL = 3;
+}
+
+void TimerInit(){
+	//	Formula: ftmr = fclk/((0+1)(PRD.all+1))
+
+	// Set Timer frequency to 1KHz
+	Uint32 systemClockFrequency = 90000000;
+	Uint32 desiredFrequency = 1000;
+
+	//	Set PRD according to the formula above
+	CpuTimer0Regs.PRD.all = (systemClockFrequency/desiredFrequency) - 1;
+
+	//  Set TPR and TPRH to 0 for simplicity so we can just worry about PRD
+	CpuTimer0Regs.TPRH.bit.TDDRH = 0;
+	CpuTimer0Regs.TPR.bit.TDDR = 0;
+
+	// Stop the timer
+	CpuTimer0Regs.TCR.bit.TSS = 1;
+
+	// Load the timer with our newly set pre-scale values above
+	CpuTimer0Regs.TCR.bit.TRB = 1;
+
+	// Enable timer interrupts
+	CpuTimer0Regs.TCR.bit.TIE = 1;
+
+}
+
+void ADCInit(){
+
+	// Conifugre and initialize the ADC module
+
+	//Set the ADC clock to 45MHz
+	SysCtrlRegs.PCLKCR0.bit.ADCENCLK = 1; // Enable the ADC module to be clocked
+	asm(" NOP");
+	asm(" NOP"); // wait 2 clock cycles to let the change stabilize
+	AdcRegs.ADCCTL2.bit.CLKDIV2EN = 1; // Divide the system clock by 2 (making the result 45MHz)
+	AdcRegs.ADCCTL2.bit.CLKDIV4EN = 0; // Do not divide any further
+	AdcRegs.ADCCTL2.bit.ADCNONOVERLAP = 1; // Do not allow overlap of samples
+
+	//Power up and enable the ADC Module
+	AdcRegs.ADCCTL1.bit.ADCPWDN = 1; // Power up this bad boy
+	AdcRegs.ADCCTL1.bit.ADCBGPWD = 1; // Power up buffer circuitry inside the core
+	AdcRegs.ADCCTL1.bit.ADCREFPWD = 1; // Power up reference buffers
+	AdcRegs.ADCCTL1.bit.ADCENABLE = 1; // Enable the ADC
+
+	// Wait for 1 ms before requesting a conversion to ensure accuracy
+	Uint32 i = 0;
+	for(i = 0; i < (.001*10000000); i++){
+		asm(" NOP");
+	}
+
+	//Configure the conversions
+	AdcRegs.ADCSOC0CTL.bit.CHSEL = 0x4; // Set the channel to epwm3
+	AdcRegs.ADCSOC0CTL.bit.ACQPS = 0x6; // Set sampling hold time. Since we need to wait at least 80ns to sample, at a 5MHz clock the minimum of 7 clock cycles should be more than enough to satisfy an 80ns hold time
+	AdcRegs.ADCSOC0CTL.bit.TRIGSEL = 0x9; // Set the conversion start trigger to be the PWM module
+
+	//CONFIGURE ADC INTERRUPTS
+	AdcRegs.INTSEL1N2.bit.INT1SEL = 0; //Connect ADCINT1 to EOC0
+	AdcRegs.INTSEL1N2.bit.INT1E = 1; //Enable ADCINT1
+	AdcRegs.ADCCTL1.bit.INTPULSEPOS = 1; // Ensure INT pulse generation occurs 1 cycle prior to ADC result latching into its result register
+}
+
+void PWMInit(){
+
+	//Initialize the PWM registers
+
+	//Enable the module clock
+	SysCtrlRegs.PCLKCR1.bit.EPWM3ENCLK = 1; // Clock ePWM3
+	asm(" NOP");
+	asm(" NOP"); // wait 2 clock cycles to let the change stabilize
+	//Configure the Time Base Clock and Counter
+	EPwm3Regs.TBCTL.bit.CTRMODE = 2; // Set the count to up-down mode
+
+	//Formula: fpwm = fclk/(2 · TBPRD)(HSPCLKDIV)(CLKDIV)
+	EPwm3Regs.TBPRD = 1500; // Set fpwm to 30 kHz based on a 90MHz clock
+	EPwm3Regs.TBCTL.bit.HSPCLKDIV = 0; //divide by 1
+	EPwm3Regs.TBCTL.bit.CLKDIV = 0; // divide by 1
+
+	//Set the Output Actions
+	EPwm3Regs.AQCTLA.bit.CAU = 1; //Set APWMA to low when the counter equals the active CMPA register and the counter is incrementing.
+	EPwm3Regs.AQCTLA.bit.CAD = 2; //Set APWMA to high when the time-base counter equals the active CMPA register and the counter is decrementing.
+	EPwm3Regs.AQCTLB.bit.CAU = 2; //Set APWMB to high when the counter equals the active CMPB register and the counter is incrementing.
+	EPwm3Regs.AQCTLB.bit.CAD = 1; //Set APWMB to low when the time-base counter equals the active CMPB register and the counter is decrementing.
+
+	//Set the Event Triggers
+	EPwm3Regs.ETSEL.bit.SOCASEL = 2; // Enable event time-base counter equal to period (TBCTR = TBPRD)
+	EPwm3Regs.ETSEL.bit.SOCAEN = 1; //Enable EPWM1SOCA pulse
+	EPwm3Regs.ETPS.bit.SOCAPRD  = 1; //These bits determine how many selected ETSEL[SOCASEL] events need to occur before an EPWMxSOCA pulse is generated. To be generated, the pulse must be enabled (ETSEL[SOCAEN] = 1). The SOCA pulse will be generated even if the status flag is set from a previous start of conversion (ETFLG[SOCA] = 1). Once the SOCA pulse is generated, the ETPS[SOCACNT] bits will automatically be cleared.
+
+	//Enable the Time Base Clock
+	SysCtrlRegs.PCLKCR0.bit.TBCLKSYNC = 1;
+	asm(" NOP");
+	asm(" NOP"); // wait 2 clock cycles to let the change stabilize
+
+	//Utilize the PWM Pins
+	//Map and Set the Duty Cycle
+	EPwm3Regs.CMPA.half.CMPA = 1000; // Compare A = 350 TBCLK counts
+	//EPwm1Regs.CMPB = 200; // Compare B = 200 TBCLK counts
+
+	GpioCtrlRegs.GPAMUX1.bit.GPIO4 = 1; //Set the 0 pin to ePWM1 output A
+	GpioCtrlRegs.GPAMUX1.bit.GPIO5 = 1; //Set the 1 pin to ePWM1 output B
+
+	GpioCtrlRegs.GPBMUX1.bit.GPIO32 = 0;
+	GpioCtrlRegs.GPBDIR.bit.GPIO32 = 1; //Set the 0 pin to ePWM1 output A
+	GpioDataRegs.GPBSET.bit.GPIO32 = 1; //Set the 1 pin to ePWM1 output B
+
+}
+
+void InterruptInit(){
+
+	// CONFIGURE TIMER INTERRUPTS
+	// Enable fetching from the PIE vector table
+	PieCtrlRegs.PIECTRL.bit.ENPIE = 1;
+
+	// Load our defined interrupt routine into the PIE Vect Table
+	PieVectTable.TINT0 = &TimerIsr;
+
+	// Enable interrupts to be triggered by CPU Timer 0 (row 1, col 7 of thie pie vector table)
+	PieCtrlRegs.PIEIER1.bit.INTx7 = 1;
+
+	// Enable Interrupts at the CPU Level:
+	// Enables level INT1 at the CPU level, disables all other levels - (INT1 contains CPU Timer 0)
+	IER = 0x0001;
+
+	// Enable cpu interrupts
+	EINT;
+
+	// CONFIGURE ADC INTERRUPTS
+
+	// Register the ISR that will run after we are notified of the conversion completion in the PieVect table
+	PieVectTable.ADCINT1 = &AdcIsr;
+
+	// Enable the ADC interrupt at the pie level
+	PieCtrlRegs.PIEIER1.bit.INTx1 = 1;
+}
+
+void QEPInit(void){
+
+	// To enable EQEP1:
+	// Set the Pin Multiplexer
+	GpioCtrlRegs.GPAMUX2.bit.GPIO20 = 1; //multiplex eQEP1 input A (I)
+	GpioCtrlRegs.GPAMUX2.bit.GPIO21 = 1; //multiplex eQEP1 input B (I)
+//	GpioCtrlRegs.GPAMUX2.bit.GPIO22 = 1; //multiplex eQEP1 input I (I)
+//	GpioCtrlRegs.GPAMUX2.bit.GPIO23 = 1; //multiplex eQEP1 input S (I)
+
+	// Enable the Module Clock
+	SysCtrlRegs.PCLKCR1.bit.EQEP1ENCLK = 1;// enable module clock for eQEP1
+	asm(" NOP");
+	asm(" NOP"); // wait 2 clock cycles to let the change stabilize
+
+	// Set the Module Maximum Count
+	EQep1Regs.QPOSMAX = 0xFFFFFFFF;// set the module count maximum to the largest possible value
+
+
+	// To enable EQEP2
+	// Set the Pin Multiplexer
+	GpioCtrlRegs.GPAMUX2.bit.GPIO24 = 2; //multiplex eQEP2 input A (I)
+	GpioCtrlRegs.GPAMUX2.bit.GPIO25 = 2; //multiplex eQEP2 input B (I)
+//	GpioCtrlRegs.GPAMUX2.bit.GPIO26 = 1; //multiplex eQEP2 input I (I)
+//	GpioCtrlRegs.GPAMUX2.bit.GPIO27 = 1; //multiplex eQEP2 input S (I)
+
+	// Enable the Module Clock
+	SysCtrlRegs.PCLKCR1.bit.EQEP2ENCLK = 1;// enable module clock for eQEP2
+	asm(" NOP");
+	asm(" NOP"); // wait 2 clock cycles to let the change stabilize
+
+	// Set the Module Maximum Count
+	EQep2Regs.QPOSMAX = 0xFFFFFFFF;// set the module count maximum to the largest possible value
+
+	EQep2Regs.QPOSINIT = 0;
+	EQep2Regs.QEPCTL.bit.QPEN = 1;
+	EQep2Regs.QEPCTL.bit.SWI = 1;
+}
+
+interrupt void TimerIsr(void){
+
+	// Let's shape our reference signal
+
+	// Define the points in time when we need to start using a certain
+	// formula to compute r
+	Uint32 taccelCounterThreshold = (Uint32)(taccel*1000);
+	Uint32 tcruiseCounterThreshold = taccelCounterThreshold + (Uint32)(tcruise*1000);
+	Uint32 tdeccelCounterThreshold = tcruiseCounterThreshold + (Uint32)(taccel*1000);
+
+	float32 ti = 0;
+	float32 tf = TimeTravel;
+
+	// Convert timeCounter to a time value
+	t = timerCounter/1000.0;
+
+	// Compute rising part of curve
+	if(timerCounter < taccelCounterThreshold)
+		r = Thetai + .5*ThetaDoubleDotAccel*(t - ti)*(t - ti);
+
+	else if(timerCounter < tcruiseCounterThreshold)
+		r = .5*(Thetai + Thetaf) + ThetaDotCruise*(t - .5*(ti+tf));
+
+	else if(timerCounter < tdeccelCounterThreshold)
+		r = Thetaf - .5*ThetaDoubleDotAccel*(tf - t)*(tf - t);
+
+	else if(timerCounter < 500)
+		r = Thetaf;
+
+	// Compute falling part of curve
+	else if(timerCounter < (500 + taccelCounterThreshold)){
+		// Set ti and tf to new values
+		ti = .5;
+		tf = .5 + TimeTravel;
+		r = Thetaf - .5*ThetaDoubleDotAccel*(ti - t)*(ti - t);
+	}
+
+	else if(timerCounter < (500 + tcruiseCounterThreshold)){
+		// Set ti and tf to new values
+		ti = .5;
+		tf = .5 + TimeTravel;
+		r = .5*(Thetai + Thetaf) - ThetaDotCruise*(t - .5*(ti+tf));
+	}
+
+	else if(timerCounter < (500 + tdeccelCounterThreshold)){
+		// Set ti and tf to new values
+		ti = .5;
+		tf = .5 + TimeTravel;
+		r = Thetai + .5*ThetaDoubleDotAccel*(t - tf)*(t - tf);
+	}
+
+	else if(timerCounter < 1000)
+		r = Thetai;
+
+	timerCounter++;
+
+	// Reset timerCounter to 0 after a full period so we can repeat
+	// the process above
+	if(timerCounter > 1000)
+		timerCounter = 0;
+
+
+	// Define our component values to generate our mapped current
+	float32 Rs = 0.02;
+	float32 R1 = 1000;
+	float32 R2 = 6040;
+	float32 R3 = 8250;
+	float32 R4 = 1000;
+	float32 Voffset = 1.25;
+	float32 Vpin = (3.3/4096)*measuredValueI;
+
+	float32 mappedCurrent = ((R1+Rs)/(R3*Rs))*Vpin - ((R1 + R3 + Rs)/(R3*Rs)*(R4/(R2+R4)))*Voffset;
+
+	// Utilize the QEP Pins
+	measuredValueP = EQep2Regs.QPOSCNT; // grab our motor position reading
+	int casted = -(int)measuredValueP;
+	//float32 mappedPosition = (-1*(int)measuredValueP)/(2*3.14);
+	float32 mappedPosition = casted*((2*3.14)/1000);
+	y = mappedPosition;
+
+	// If we have not already filled up the arrays add data point to the next index
+	if(dataIndex<=999)
+	{
+		dataArrayV[dataIndex] = u;
+		dataArrayI[dataIndex] = mappedCurrent;
+		dataArrayP[dataIndex] = mappedPosition;
+		dataIndex++;
+	}
+
+	UpdateStateVariables();
+
+	// Set the motor voltage to the value determined above
+	SetMotorVoltage(u);
+
+	// Acknowledge Interrupt
+	PieCtrlRegs.PIEACK.bit.ACK1 = 1;
+}
+
+interrupt void AdcIsr(void){
+
+	// Recieve new conversion
+
+	// Read the integer value of the conversion of SOC0
+	measuredValueI = AdcResult.ADCRESULT0;
+
+	// Clear ADCINT1 to show we have read the result
+	AdcRegs.ADCINTFLGCLR.bit.ADCINT1 = 1;
+
+	// Acknowledge Interrupt
+	PieCtrlRegs.PIEACK.bit.ACK1 = 1;
+}
+
+void SetMotorVoltage(float32 desiredVoltage) {
+	// This function allows us to physically
+	// alter the average voltage being delivered to the motor
+
+	Uint16 TPRD = 1500; //Scale value based on clock speed
+	Uint16 Vdc = 24; //Vmax
+
+	// The value register CMPA must hold to generate the
+	// appropriate duty cycle to generate the desired voltage
+	Uint16 requiredCompareValue = .5*TPRD*(1 + desiredVoltage/Vdc);
+
+	EPwm3Regs.CMPA.half.CMPA = requiredCompareValue;
+}
+
+void ControlSysInit(){
+
+	//plant simulation model parameters
+	L = 0.014;                          // motor inductance (fixed)
+	R = 7.6;                            // motor resistance (fixed)
+	K = 0.16;                           // motor magnetic coefficient (fixed)
+	J = 28e-6;                          // motor/load inertia (load dependent)
+	F = 1.9e-4;                         // motor/load friction (load dependent)
+
+	// plant design model parameters
+	Jhat = J*1;                         // assumed vs true parameter mismatch
+	Fhat = F*1;                         // assumed vs true parameter mismatch
+	alpha = (K*K+Fhat*R)/(Jhat*R);      // design model A matrix coefficient
+	beta = K/(Jhat*R);                  // design model B matrix coefficient
+
+	// controller design parameters
+	Vdc = 24;                           // power supply voltage
+	I_leg_max = 3;                      // converter leg current bound
+	T = 0.001;                          // controller period
+	lambda_r = 63;                      // regulator bandwidth parameter
+	lambda_e = 4*lambda_r;              // estimator bandwidth parameter
+
+	// gain parameters
+	K11 = (1/beta)*3*lambda_r*lambda_r;
+	K12 = (1/beta)*(3*lambda_r - alpha);
+	K2 = (1/beta)*lambda_r*lambda_r*lambda_r;
+
+	L1 = 2*lambda_e - alpha;
+	L2 = lambda_e*lambda_e - 2*alpha*lambda_e + alpha*alpha;
+
+	// reference shaping
+
+	Thetai = 0;
+	Thetaf = 10*pi;
+	ThetaTravel = Thetaf - Thetai;
+	omegax = Vdc*(((K*K)*ThetaTravel - sqrt(Vdc*J*R*K*ThetaTravel))/((K*K*K)*ThetaTravel - Vdc*J*R));
+	Tx = Vdc*(K/R)*((K*sqrt(Vdc*J*R*K*ThetaTravel) - Vdc*J*R)/((K*K*K)*ThetaTravel - Vdc*J*R));
+
+	ThetaDotCruise = omegax;
+	ThetaDoubleDotAccel = Tx/J;
+
+	taccel = ThetaDotCruise/ThetaDoubleDotAccel;
+	tcruise = ThetaTravel/ThetaDotCruise - ThetaDotCruise/ThetaDoubleDotAccel;
+
+	TimeTravel = ThetaTravel/ThetaDotCruise + ThetaDotCruise/ThetaDoubleDotAccel;
+
+
+}
+
+void UpdateStateVariables(){
+	u = -K11*x1 - K12*x2 - K2*sigma; // computed voltage;
+
+	// make sure u does not exceed the max value that the motor can handle
+	if(u > 24)
+		u = 24;
+
+	x1 = x1 + T*x2 - T*L1*(x1-y); //position;
+	x2 = x2 - T*alpha*x2 + T*beta*u - T*L2*(x1 - y); //speed;
+
+	// Add windup compensation (only integrate sigma when the actuator is not saturated)
+	if((u < 24) && (u > -24))
+		sigma = sigma + T*(y - r); //error;
+}
+
+void ServiceWatchdog(){
+
+	EALLOW;
+	SysCtrlRegs.WDKEY = 0x55;
+	SysCtrlRegs.WDKEY = 0xAA;
+	EDIS;
+
+}

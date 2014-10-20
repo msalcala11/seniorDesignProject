@@ -1,0 +1,94 @@
+void setup_adc()
+{
+	//enable bandgap, clocks, powerup etc.
+	//set all SOCs to point to same channel
+
+	//ADCINT 1 and 2 enabled
+	AdcRegs.INTSEL1N2.bit.INT1E = 1;
+	AdcRegs.INTSEL1N2.bit.INT2E = 1;
+	//ADCINT 1 and 2 wait for confirmation
+	AdcRegs.INTSEL1N2.bit.INT1CONT = 0;
+	AdcRegs.INTSEL1N2.bit.INT2CONT = 0;
+    //SOC 6 will trigger ADCINT1
+	AdcRegs.INTSEL1N2.bit.INT1SEL = 6;
+	//SOC 14 will trigger ADCINT2
+	AdcRegs.INTSEL1N2.bit.INT2SEL = 14;
+
+	//ADCINT2 will trigger first 8 SOCs
+   	AdcRegs.ADCINTSOCSEL1.bit.SOC0 = 2;
+   	AdcRegs.ADCINTSOCSEL1.bit.SOC1 = 2;
+   	AdcRegs.ADCINTSOCSEL1.bit.SOC2 = 2;
+   	AdcRegs.ADCINTSOCSEL1.bit.SOC3 = 2;
+   	AdcRegs.ADCINTSOCSEL1.bit.SOC4 = 2;
+   	AdcRegs.ADCINTSOCSEL1.bit.SOC5 = 2;
+   	AdcRegs.ADCINTSOCSEL1.bit.SOC6 = 2;
+   	AdcRegs.ADCINTSOCSEL1.bit.SOC7 = 2;
+
+	//ADCINT1 will trigger second 8 SOCs
+   	AdcRegs.ADCINTSOCSEL2.bit.SOC8 = 1;
+   	AdcRegs.ADCINTSOCSEL2.bit.SOC9 = 1;
+   	AdcRegs.ADCINTSOCSEL2.bit.SOC10 = 1;
+   	AdcRegs.ADCINTSOCSEL2.bit.SOC11 = 1;
+   	AdcRegs.ADCINTSOCSEL2.bit.SOC12 = 1;
+   	AdcRegs.ADCINTSOCSEL2.bit.SOC13 = 1;
+   	AdcRegs.ADCINTSOCSEL2.bit.SOC14 = 1;
+   	AdcRegs.ADCINTSOCSEL2.bit.SOC15 = 1;
+}
+
+void take_samples(Uint16 size, Uint16* buffer)
+{
+	Uint16 index = 0;
+
+	//enable adcint1 and adcint2 needed for ping-pong sampling
+	AdcRegs.INTSEL1N2.bit.INT1E = 1;
+	AdcRegs.INTSEL1N2.bit.INT2E = 1;
+	
+	AdcRegs.ADCSOCFRC1.all = 0x00FF; //software force SOC pending flag for first 8 SOCs
+	while(index < sample_size) {
+		while (AdcRegs.ADCINTFLG.bit.ADCINT1 == 0){/*wait and do nothing*/}
+		AdcRegs.ADCINTFLGCLR.bit.ADCINT1 = 1; //clear ADCINT1
+
+		//ADCINT1 was triggered by the end of SOC6.
+		//Since they are done, read SOC0-SOC7 into buffer
+		//(this assumes SOC7 will be done converting by
+		//the time the code reaches it to put in buffer).
+		//Also note that SOC6 triggered ADCINT1 which
+		//then triggered SOC8-SOC15 to be pending.
+		//These newly pending SOCs will begin converting
+		//immediately after SOC7 finishes.
+
+		buffer[index++] = AdcResult.ADCRESULT0;
+		buffer[index++] = AdcResult.ADCRESULT1;
+		buffer[index++] = AdcResult.ADCRESULT2;
+		buffer[index++] = AdcResult.ADCRESULT3;
+		buffer[index++] = AdcResult.ADCRESULT4;
+		buffer[index++] = AdcResult.ADCRESULT5;
+		buffer[index++] = AdcResult.ADCRESULT6;
+		buffer[index++] = AdcResult.ADCRESULT7;
+
+		while (AdcRegs.ADCINTFLG.bit.ADCINT2 == 0){/*wait and do nothing*/}
+		AdcRegs.ADCINTFLGCLR.bit.ADCINT2 = 1; //clear ADCINT2
+
+		//ADCINT2 was triggered by the end of SOC14.
+		//Since they are done, read SOC8-SOC15 into buffer
+		//(this assumes SOC15 will be done converting by
+		//the time the code reaches it to put in buffer).
+		//Also note that SOC14 triggered ADCINT2 which
+		//then triggered SOC0-SOC7 to be pending.
+		//These newly pending SOCs will begin converting
+		//immediately after SOC15 finishes.
+
+		buffer[index++] = AdcResult.ADCRESULT8;
+		buffer[index++] = AdcResult.ADCRESULT9;
+		buffer[index++] = AdcResult.ADCRESULT10;
+		buffer[index++] = AdcResult.ADCRESULT11;
+		buffer[index++] = AdcResult.ADCRESULT12;
+		buffer[index++] = AdcResult.ADCRESULT13;
+		buffer[index++] = AdcResult.ADCRESULT14;
+		buffer[index++] = AdcResult.ADCRESULT15;
+	}
+
+	//disable adcint1 and adcint2 to STOP the ping-pong sampling
+	AdcRegs.INTSEL1N2.bit.INT1E = 0;
+	AdcRegs.INTSEL1N2.bit.INT2E = 0;
+}
