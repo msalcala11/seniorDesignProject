@@ -15,13 +15,35 @@ void ServiceWatchdog(); // Watchdog Servicing Function
 void CheckPushButton3(); // Checks the value of PB3 and adjusts counterThreshold accordingly
 interrupt void AdcISR(void); // Interrupt routine called on each ADC end of conversion
 interrupt void TimerISR(void); // Interrupt routine called at 100kHz
+Uint16 max();
+Uint16 start();
+Uint16 end();
+float32 getDeltaT();
 
 Uint16 counter = 0; // Our global counter incremented with each interrupt
 Uint16 measuredValue; // The measured value of the ePWM1A voltage
-Uint16 dataArray[1000]; // stores the latest ADC measurement of ePWM1A
+//float32 dataArray[800]; // stores the latest ADC measurement of ePWM1A
+Uint16 dataArray[1000];
 Uint16 TBPRD; // TBPRD value used in this program (stored globally for convenient access when setting duty cycle)
 Uint16 pushButtonPressed; // If 1, pushbutton 3 is pressed, if 0, pushbutton 3 is not pressed
 Uint16 compareValue; // The current value stored in the ePWM compare register
+Uint16 dataMax = 0;
+Uint16 dataMaxIndex;
+Uint16 startpoint = 0;
+Uint16 endpoint = 0;
+float32 deltaT;
+
+// Current mapping variables
+float32 Rs = 0.02;
+float32 R1 = 1000;
+float32 R2 = 6040;
+float32 R3 = 8250;
+float32 R4 = 1000;
+float32 Voffset = 1.25;
+float32 VpinCoeff;
+float32 VoffsetCoeff;
+float32 subtractor;
+float32 measuredValueCoeff;
 
 void main(void) {
 	
@@ -267,14 +289,25 @@ interrupt void TimerISR(void){
 	//CheckPushButton3();
 
 	// Let's store the current measuredValue of the PWM pin voltage in our array
+
+	//float32 VpinIa = (float32)measuredValue;
+	//dataArray[counter] = VpinIa;
 	dataArray[counter] = measuredValue;
 
-	//if(counter < 999)
+	if(counter < 999){
 		counter++;
+		dataArray[counter] = measuredValue;
+	}
 
 	// Reset the counter if we have reached the bounds of our data Array
-	if(counter > 999)
-		counter = 0;
+	if(counter >= 999 && dataMax == 0){
+//		dataMax = max();
+//		startpoint = start();
+//		endpoint = end();
+		//counter = 0;
+		deltaT = getDeltaT();
+	}
+
 
 
 //	if(pushButtonPressed)
@@ -294,5 +327,62 @@ interrupt void TimerISR(void){
 	PieCtrlRegs.PIEACK.bit.ACK1 = 1;
 }
 
+void CurrentMappingInit(){
+	// This function precalculates the coefficients required to map a
+	// measured current to amps to save clock cycles during runtime
+
+	VpinCoeff = ((R1+Rs)/(R3*Rs));
+	VoffsetCoeff = ((R1 + R3 + Rs)/(R3*Rs)*(R4/(R2+R4)));
+	subtractor = VoffsetCoeff*Voffset;
+	measuredValueCoeff = (3.3/4096);
+}
+
+Uint16 max(){
+	int i;
+	for(i=200; i<999; i++){
+		if(dataArray[i]>dataMax){
+			dataMax = dataArray[i];
+			dataMaxIndex = i;
+		}
+	}
+	return dataMax;
+}
+
+Uint16 start(){
+	int i;
+	int startpoint = -1;
+	for(i=dataMaxIndex; i>0 && startpoint == -1;i--){
+		if(dataArray[i]<0.1*dataMax)
+			startpoint = i;
+	}
+	return startpoint;
+}
+
+Uint16 end(){
+	int i;
+	int endpoint = -1;
+	for(i=dataMaxIndex; i>0 && endpoint == -1;i--){
+		if(dataArray[i]<0.9*dataMax)
+			endpoint = i;
+	}
+	return endpoint;
+}
+
+float32 getDeltaT(){
+
+	// Get the maximum measured value in the data array
+	dataMax = max();
+
+	// Based on the maximum measured value get the start point of the period
+	startpoint = start();
+
+	// Based on the start point and the max measured value, get the end point of the period
+	endpoint = end();
+
+	// Lets calculate delta T by
+	Uint16 discreteSampleLength = endpoint - startpoint;
+	float32 sampleDuration = 1e-6;
+	return discreteSampleLength*sampleDuration;
+}
 
 
