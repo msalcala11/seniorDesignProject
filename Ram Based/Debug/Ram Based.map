@@ -1,10 +1,10 @@
 ******************************************************************************
              TMS320C2000 Linker PC v6.2.5                      
 ******************************************************************************
->> Linked Mon Oct 20 19:01:52 2014
+>> Linked Wed Oct 22 16:40:25 2014
 
 OUTPUT FILE NAME:   <Ram Based.out>
-ENTRY POINT SYMBOL: "_c_int00"  address: 000083eb
+ENTRY POINT SYMBOL: "_c_int00"  address: 00008434
 
 
 MEMORY CONFIGURATION
@@ -13,8 +13,8 @@ MEMORY CONFIGURATION
 ----------------------  --------  ---------  --------  --------  ----  --------
 PAGE 0:
   BEGIN                 00000000   00000002  00000000  00000002  RWIX
-  RAMM0                 00000050   000003b0  00000044  0000036c  RWIX
-  PRAML0                00008000   00000900  000004c1  0000043f  RWIX
+  RAMM0                 00000050   000003b0  00000045  0000036b  RWIX
+  PRAML0                00008000   00000900  0000050a  000003f6  RWIX
   IQTABLES              003fe000   00000b50  00000000  00000b50  RWIX
   IQTABLES2             003feb50   0000008c  00000000  0000008c  RWIX
   IQTABLES3             003febdc   000000aa  00000000  000000aa  RWIX
@@ -63,26 +63,26 @@ section   page    origin      length       input sections
 --------  ----  ----------  ----------   ----------------
 .pinit     0    00000050    00000000     UNINITIALIZED
 
-.cinit     0    00000050    00000044     
-                  00000050    0000002e     main.obj (.cinit)
-                  0000007e    0000000a     rts2800_ml.lib : _lock.obj (.cinit)
-                  00000088    0000000a                    : exit.obj (.cinit)
-                  00000092    00000002     --HOLE-- [fill = 0]
+.cinit     0    00000050    00000045     
+                  00000050    0000002f     main.obj (.cinit)
+                  0000007f    0000000a     rts2800_ml.lib : _lock.obj (.cinit)
+                  00000089    0000000a                    : exit.obj (.cinit)
+                  00000093    00000002     --HOLE-- [fill = 0]
 
-.text      0    00008000    000004c1     
-                  00008000    00000252     main.obj (.text)
-                  00008252    00000083     rts2800_ml.lib : fs_div.obj (.text)
-                  000082d5    00000078                    : fs_add.obj (.text)
-                  0000834d    0000005a                    : fs_mpy.obj (.text)
-                  000083a7    00000044     main.obj (.text:retain)
-                  000083eb    00000044     rts2800_ml.lib : boot.obj (.text)
-                  0000842f    0000001d                    : fs_tou.obj (.text)
-                  0000844c    00000019                    : args_main.obj (.text)
-                  00008465    00000019                    : exit.obj (.text)
-                  0000847e    00000017                    : fs_cmp.obj (.text)
-                  00008495    00000013                    : ul_tofs.obj (.text)
-                  000084a8    00000010                    : u_tofs.obj (.text)
-                  000084b8    00000009                    : _lock.obj (.text)
+.text      0    00008000    0000050a     
+                  00008000    00000274     main.obj (.text)
+                  00008274    00000083     rts2800_ml.lib : fs_div.obj (.text)
+                  000082f7    00000078                    : fs_add.obj (.text)
+                  0000836f    0000006b     main.obj (.text:retain)
+                  000083da    0000005a     rts2800_ml.lib : fs_mpy.obj (.text)
+                  00008434    00000044                    : boot.obj (.text)
+                  00008478    0000001d                    : fs_tou.obj (.text)
+                  00008495    00000019                    : args_main.obj (.text)
+                  000084ae    00000019                    : exit.obj (.text)
+                  000084c7    00000017                    : fs_cmp.obj (.text)
+                  000084de    00000013                    : ul_tofs.obj (.text)
+                  000084f1    00000010                    : u_tofs.obj (.text)
+                  00008501    00000009                    : _lock.obj (.text)
 
 .reset     0    003fffc0    00000002     DSECT
                   003fffc0    00000002     rts2800_ml.lib : boot.obj (.reset)
@@ -285,26 +285,25 @@ address     data page           name
 
 00007900     1e4 (00007900)     _I2caRegs
 
-00008900     224 (00008900)     _compareValue
+00008900     224 (00008900)     _TBPRD
 00008901     224 (00008900)     _pushButtonPressed
-00008902     224 (00008900)     _dataMaxIndex
-00008903     224 (00008900)     _measuredValue
+00008902     224 (00008900)     _measuredValue
+00008903     224 (00008900)     _dataMinIndex
 00008904     224 (00008900)     _counter
-00008905     224 (00008900)     _dataMax
-00008906     224 (00008900)     _TBPRD
-00008907     224 (00008900)     _startpoint
-00008908     224 (00008900)     _endpoint
-0000890a     224 (00008900)     _deltaT
-0000890c     224 (00008900)     _VoffsetCoeff
-0000890e     224 (00008900)     _VpinCoeff
-00008910     224 (00008900)     _Rs
-00008912     224 (00008900)     _measuredValueCoeff
-00008914     224 (00008900)     _subtractor
-00008916     224 (00008900)     _R2
-00008918     224 (00008900)     _R1
-0000891a     224 (00008900)     _R3
-0000891c     224 (00008900)     _Voffset
-0000891e     224 (00008900)     _R4
+00008905     224 (00008900)     _relMax
+00008906     224 (00008900)     _dataMaxIndex
+00008907     224 (00008900)     _dataMin
+00008908     224 (00008900)     _compareValue
+00008909     224 (00008900)     _dataMax
+0000890a     224 (00008900)     _startpoint
+0000890b     224 (00008900)     _resistanceComputed
+0000890c     224 (00008900)     _endpoint
+0000890d     224 (00008900)     _deltaTcomputed
+0000890e     224 (00008900)     _dataAverage
+00008910     224 (00008900)     _resistance
+00008912     224 (00008900)     _current
+00008914     224 (00008900)     _capacitance
+00008916     224 (00008900)     _deltaT
 
 00008940     225 (00008940)     _dataArray
 
@@ -323,17 +322,17 @@ GLOBAL SYMBOLS: SORTED ALPHABETICALLY BY Name
 address    name
 --------   ----
 00008000   .text
-00008465   C$$EXIT
-000082da   FS$$ADD
-0000847e   FS$$CMP
-00008252   FS$$DIV
-0000834d   FS$$MPY
-000082d5   FS$$SUB
-0000842f   FS$$TOU
-000084a8   U$$TOFS
-00008495   UL$$TOFS
+000084ae   C$$EXIT
+000082fc   FS$$ADD
+000084c7   FS$$CMP
+00008274   FS$$DIV
+000083da   FS$$MPY
+000082f7   FS$$SUB
+00008478   FS$$TOU
+000084f1   U$$TOFS
+000084de   UL$$TOFS
 0000804f   _ADCInit
-000083a7   _AdcISR
+0000836f   _AdcISR
 00007100   _AdcRegs
 00000b00   _AdcResult
 00008148   _CheckPushButton3
@@ -344,7 +343,6 @@ address    name
 00000c10   _CpuTimer2Regs
 003f7ff8   _CsmPwl
 00000ae0   _CsmRegs
-0000815b   _CurrentMappingInit
 00000880   _DevEmuRegs
 00006a00   _ECap1Regs
 00006800   _EPwm1Regs
@@ -367,23 +365,15 @@ address    name
 003d7fff   _PartIdRegs
 00000ce0   _PieCtrlRegs
 00000d00   _PieVectTable
-00008918   _R1
-00008916   _R2
-0000891a   _R3
-0000891e   _R4
-00008910   _Rs
 00007050   _SciaRegs
 00008151   _ServiceWatchdog
 00007040   _SpiaRegs
 0000801f   _SysClkInit
 00007010   _SysCtrlRegs
 00000985   _SysPwrCtrlRegs
-00008906   _TBPRD
-000083ba   _TimerISR
+00008900   _TBPRD
+00008382   _TimerISR
 00008030   _TimerInit
-0000891c   _Voffset
-0000890c   _VoffsetCoeff
-0000890e   _VpinCoeff
 00007070   _XIntruptRegs
 00000700   __STACK_END
 00000300   __STACK_SIZE
@@ -393,39 +383,48 @@ address    name
 ffffffff   ___binit__
 ffffffff   ___c_args__
 00000050   ___cinit__
-000084c1   ___etext__
+0000850a   ___etext__
 ffffffff   ___pinit__
 00008000   ___text__
-0000844c   __args_main
+00008495   __args_main
 00008d2a   __lock
-000084c0   __nop
-000084bc   __register_lock
-000084b8   __register_unlock
+00008509   __nop
+00008505   __register_lock
+00008501   __register_unlock
 00000400   __stack
 00008d28   __unlock
-00008465   _abort
-000083eb   _c_int00
-00008900   _compareValue
+000084ae   _abort
+00008434   _c_int00
+00008914   _capacitance
+00008908   _compareValue
 00008904   _counter
+00008912   _current
 00008940   _dataArray
-00008905   _dataMax
-00008902   _dataMaxIndex
-0000890a   _deltaT
-00008203   _end
-00008908   _endpoint
-00008467   _exit
-00008234   _getDeltaT
+0000890e   _dataAverage
+00008909   _dataMax
+00008906   _dataMaxIndex
+00008907   _dataMin
+00008903   _dataMinIndex
+00008916   _deltaT
+0000890d   _deltaTcomputed
+000081d4   _end
+0000890c   _endpoint
+000084b0   _exit
+00008208   _getDeltaT
+0000822c   _getResistance
 00008000   _main
-000081af   _max
-00008903   _measuredValue
-00008912   _measuredValueCoeff
+0000815b   _max
+00008902   _measuredValue
+0000817e   _min
 00008901   _pushButtonPressed
-000081d2   _start
-00008907   _startpoint
-00008914   _subtractor
+00008905   _relMax
+00008910   _resistance
+0000890b   _resistanceComputed
+000081a0   _start
+0000890a   _startpoint
 ffffffff   binit
 00000050   cinit
-000084c1   etext
+0000850a   etext
 ffffffff   pinit
 
 
@@ -481,51 +480,51 @@ address    name
 00008125   _LedInit
 00008148   _CheckPushButton3
 00008151   _ServiceWatchdog
-0000815b   _CurrentMappingInit
-000081af   _max
-000081d2   _start
-00008203   _end
-00008234   _getDeltaT
-00008252   FS$$DIV
-000082d5   FS$$SUB
-000082da   FS$$ADD
-0000834d   FS$$MPY
-000083a7   _AdcISR
-000083ba   _TimerISR
-000083eb   _c_int00
-0000842f   FS$$TOU
-0000844c   __args_main
-00008465   C$$EXIT
-00008465   _abort
-00008467   _exit
-0000847e   FS$$CMP
-00008495   UL$$TOFS
-000084a8   U$$TOFS
-000084b8   __register_unlock
-000084bc   __register_lock
-000084c0   __nop
-000084c1   ___etext__
-000084c1   etext
-00008900   _compareValue
+0000815b   _max
+0000817e   _min
+000081a0   _start
+000081d4   _end
+00008208   _getDeltaT
+0000822c   _getResistance
+00008274   FS$$DIV
+000082f7   FS$$SUB
+000082fc   FS$$ADD
+0000836f   _AdcISR
+00008382   _TimerISR
+000083da   FS$$MPY
+00008434   _c_int00
+00008478   FS$$TOU
+00008495   __args_main
+000084ae   C$$EXIT
+000084ae   _abort
+000084b0   _exit
+000084c7   FS$$CMP
+000084de   UL$$TOFS
+000084f1   U$$TOFS
+00008501   __register_unlock
+00008505   __register_lock
+00008509   __nop
+0000850a   ___etext__
+0000850a   etext
+00008900   _TBPRD
 00008901   _pushButtonPressed
-00008902   _dataMaxIndex
-00008903   _measuredValue
+00008902   _measuredValue
+00008903   _dataMinIndex
 00008904   _counter
-00008905   _dataMax
-00008906   _TBPRD
-00008907   _startpoint
-00008908   _endpoint
-0000890a   _deltaT
-0000890c   _VoffsetCoeff
-0000890e   _VpinCoeff
-00008910   _Rs
-00008912   _measuredValueCoeff
-00008914   _subtractor
-00008916   _R2
-00008918   _R1
-0000891a   _R3
-0000891c   _Voffset
-0000891e   _R4
+00008905   _relMax
+00008906   _dataMaxIndex
+00008907   _dataMin
+00008908   _compareValue
+00008909   _dataMax
+0000890a   _startpoint
+0000890b   _resistanceComputed
+0000890c   _endpoint
+0000890d   _deltaTcomputed
+0000890e   _dataAverage
+00008910   _resistance
+00008912   _current
+00008914   _capacitance
+00008916   _deltaT
 00008940   _dataArray
 00008d28   __unlock
 00008d2a   __lock

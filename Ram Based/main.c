@@ -19,6 +19,8 @@ Uint16 max();
 Uint16 start();
 Uint16 end();
 float32 getDeltaT();
+float32 getResistance();
+float32 getCurrent();
 
 Uint16 counter = 0; // Our global counter incremented with each interrupt
 Uint16 measuredValue; // The measured value of the ePWM1A voltage
@@ -28,22 +30,31 @@ Uint16 TBPRD; // TBPRD value used in this program (stored globally for convenien
 Uint16 pushButtonPressed; // If 1, pushbutton 3 is pressed, if 0, pushbutton 3 is not pressed
 Uint16 compareValue; // The current value stored in the ePWM compare register
 Uint16 dataMax = 0;
+Uint16 dataMin = 9999;
+Uint16 relMax = 0;
 Uint16 dataMaxIndex;
+Uint16 dataMinIndex;
 Uint16 startpoint = 0;
 Uint16 endpoint = 0;
-float32 deltaT;
+float32 deltaT = 0; // The rise time of the output signal
+float32 current = 1.0; // The current flowing through the known resistor
+float32 dataAverage = 1000.0; // The DC output voltage measured during the resistance test
+float32 resistance; // The measured resistance of the meat
+float32 capacitance;
+Uint16 resistanceComputed = 0;
+Uint16 deltaTcomputed = 0;
 
 // Current mapping variables
-float32 Rs = 0.02;
-float32 R1 = 1000;
-float32 R2 = 6040;
-float32 R3 = 8250;
-float32 R4 = 1000;
-float32 Voffset = 1.25;
-float32 VpinCoeff;
-float32 VoffsetCoeff;
-float32 subtractor;
-float32 measuredValueCoeff;
+//float32 Rs = 0.02;
+//float32 R1 = 1000;
+//float32 R2 = 6040;
+//float32 R3 = 8250;
+//float32 R4 = 1000;
+//float32 Voffset = 1.25;
+//float32 VpinCoeff;
+//float32 VoffsetCoeff;
+//float32 subtractor;
+//float32 measuredValueCoeff;
 
 void main(void) {
 	
@@ -285,57 +296,52 @@ interrupt void AdcISR(void){
 
 interrupt void TimerISR(void){
 
-	// Check to see if we need to change LED brightness
-	//CheckPushButton3();
-
-	// Let's store the current measuredValue of the PWM pin voltage in our array
-
-	//float32 VpinIa = (float32)measuredValue;
-	//dataArray[counter] = VpinIa;
-	dataArray[counter] = measuredValue;
-
 	if(counter < 999){
 		counter++;
 		dataArray[counter] = measuredValue;
 	}
-
 	// Reset the counter if we have reached the bounds of our data Array
-	if(counter >= 999 && dataMax == 0){
-//		dataMax = max();
-//		startpoint = start();
-//		endpoint = end();
-		//counter = 0;
-		deltaT = getDeltaT();
+	if(counter >= 999){
+		if(deltaTcomputed == 0){
+			deltaTcomputed = 1;
+			// If dataMax is still 0, that means we have not yet computed our rise time, so let's do that now
+			deltaT = getDeltaT();
+			// Begin generating 3.3 V DC signal
+			// Reset counter back to zero so we start sampling again
+			counter = 0;
+		}
+
+		else if(deltaTcomputed == 1 && resistanceComputed == 0) {
+			resistanceComputed = 1;
+			// This means we have already computed the rise time, and all we need to do now is compute the resistance
+//			float32 dataAverage2 = 1000.0;
+//			float32 current2 = 1.0;
+			resistance = getResistance();// dataAverage/current;//1000.0/1.0;
+
+			// Let's get capacitance!!!!
+			float32 magicConstant = 2.197;
+			capacitance = deltaT/(magicConstant*resistance);
+		}
 	}
-
-
-
-//	if(pushButtonPressed)
-//		// set duty cycle to .1;
-//		compareValue = (Uint16)(TBPRD*0.1);
-//	else
-//		// set duty cycle to .9;
-//		compareValue = (Uint16)(TBPRD*0.9);
-
-	//EPwm1Regs.CMPA.half.CMPA = compareValue;
 
 	// Request new conversions
 	AdcRegs.ADCSOCFRC1.bit.SOC0 = 1; // Request a conversion on SOC0
 
 	// Show that the interrupt has been serviced and re-enable future interrupts
 	// from category 1 (a category including CPU Timer 0)
-	PieCtrlRegs.PIEACK.bit.ACK1 = 1;
+	if(counter < 999)
+		PieCtrlRegs.PIEACK.bit.ACK1 = 1;
 }
 
-void CurrentMappingInit(){
-	// This function precalculates the coefficients required to map a
-	// measured current to amps to save clock cycles during runtime
-
-	VpinCoeff = ((R1+Rs)/(R3*Rs));
-	VoffsetCoeff = ((R1 + R3 + Rs)/(R3*Rs)*(R4/(R2+R4)));
-	subtractor = VoffsetCoeff*Voffset;
-	measuredValueCoeff = (3.3/4096);
-}
+//void CurrentMappingInit(){
+//	// This function precalculates the coefficients required to map a
+//	// measured current to amps to save clock cycles during runtime
+//
+//	VpinCoeff = ((R1+Rs)/(R3*Rs));
+//	VoffsetCoeff = ((R1 + R3 + Rs)/(R3*Rs)*(R4/(R2+R4)));
+//	subtractor = VoffsetCoeff*Voffset;
+//	measuredValueCoeff = (3.3/4096);
+//}
 
 Uint16 max(){
 	int i;
@@ -348,11 +354,22 @@ Uint16 max(){
 	return dataMax;
 }
 
+Uint16 min(){
+	int i;
+	for(i=0; i<999; i++){
+		if(dataArray[i]<dataMin){
+			dataMin = dataArray[i];
+			dataMinIndex = i;
+		}
+	}
+	return dataMin;
+}
+
 Uint16 start(){
 	int i;
 	int startpoint = -1;
 	for(i=dataMaxIndex; i>0 && startpoint == -1;i--){
-		if(dataArray[i]<0.1*dataMax)
+		if((dataArray[i] - dataMin) < 0.1*relMax)
 			startpoint = i;
 	}
 	return startpoint;
@@ -362,7 +379,7 @@ Uint16 end(){
 	int i;
 	int endpoint = -1;
 	for(i=dataMaxIndex; i>0 && endpoint == -1;i--){
-		if(dataArray[i]<0.9*dataMax)
+		if(dataArray[i] - dataMin < 0.9*relMax)
 			endpoint = i;
 	}
 	return endpoint;
@@ -372,7 +389,9 @@ float32 getDeltaT(){
 
 	// Get the maximum measured value in the data array
 	dataMax = max();
+	dataMin = min();
 
+	relMax = dataMax - dataMin;
 	// Based on the maximum measured value get the start point of the period
 	startpoint = start();
 
@@ -381,8 +400,29 @@ float32 getDeltaT(){
 
 	// Lets calculate delta T by
 	Uint16 discreteSampleLength = endpoint - startpoint;
-	float32 sampleDuration = 1e-6;
+	float32 sampleDuration = 2.222e-6;
 	return discreteSampleLength*sampleDuration;
 }
 
+float32 getResistance(){
+	// This function will be run immediately after we begin generation of a DC 3.3V input signal
+
+	// Average data array only for non-outlier samples
+	Uint32 sum = 0;
+	int i;
+	for(i=0; i < 999; i++){
+		sum = sum + dataArray[i];
+	}
+
+	dataAverage = sum/1000.0;
+	// Define Rknown
+	float32 Rknown = 15000.0; //15kOhms
+	float32 scalingFactor = 0.00075; // Converts ADC integer measurement value to actual voltage
+
+	float Vout = scalingFactor*dataAverage;
+	// compute I according to the following formula: I = (3.3 - Vout)/Rknown
+
+	current = (3.3 - Vout)/Rknown;
+	return Vout/current;
+}
 
