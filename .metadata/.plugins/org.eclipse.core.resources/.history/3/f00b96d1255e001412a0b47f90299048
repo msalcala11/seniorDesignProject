@@ -304,7 +304,7 @@ interrupt void TimerISR(void){
 	// Reset the counter if we have reached the bounds of our data Array
 	if(counter >= 999){
 		if(deltaTcomputed == 0){
-			//EPwm1Regs.CMPA.half.CMPA = (Uint16)TBPRD*1; // Compare A = 350 TBCLK counts
+			EPwm1Regs.CMPA.half.CMPA = (Uint16)TBPRD*1; // Compare A = 350 TBCLK counts
 			deltaTcomputed = 1;
 			// If dataMax is still 0, that means we have not yet computed our rise time, so let's do that now
 			deltaT = getDeltaT();
@@ -403,7 +403,7 @@ float32 getDeltaT(){
 
 	// Lets calculate delta T by
 	Uint16 discreteSampleLength = endpoint - startpoint;
-	float32 sampleDuration = 1.8e-6;//2.222e-6;
+	float32 sampleDuration = 2e-6;//2.222e-6;
 	return discreteSampleLength*sampleDuration;
 }
 

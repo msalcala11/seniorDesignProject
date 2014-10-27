@@ -310,7 +310,7 @@ interrupt void TimerISR(void){
 			deltaT = getDeltaT();
 			// Begin generating 3.3 V DC signal
 			// Reset counter back to zero so we start sampling again
-			counter = 0;
+			//counter = 0;
 
 		}
 

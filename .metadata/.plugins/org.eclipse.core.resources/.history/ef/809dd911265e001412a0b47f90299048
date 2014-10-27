@@ -310,7 +310,7 @@ interrupt void TimerISR(void){
 			deltaT = getDeltaT();
 			// Begin generating 3.3 V DC signal
 			// Reset counter back to zero so we start sampling again
-			counter = 0;
+			//counter = 0;
 
 		}
 
@@ -403,7 +403,7 @@ float32 getDeltaT(){
 
 	// Lets calculate delta T by
 	Uint16 discreteSampleLength = endpoint - startpoint;
-	float32 sampleDuration = 1.8e-6;//2.222e-6;
+	float32 sampleDuration = 2e-6;//2.222e-6;
 	return discreteSampleLength*sampleDuration;
 }
 
