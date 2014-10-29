@@ -21,6 +21,7 @@ Uint16 end();
 float32 getDeltaT();
 float32 getResistance();
 float32 getCurrent();
+void delay(int cycles);
 
 Uint16 counter = 0; // Our global counter incremented with each interrupt
 Uint16 measuredValue; // The measured value of the ePWM1A voltage
@@ -44,6 +45,12 @@ float32 capacitance;
 Uint16 resistanceComputed = 0;
 Uint16 deltaTcomputed = 0;
 float32 Vout = 0;
+
+float32 resistanceArray[10];
+float32 capacitanceArray[10];
+Uint16 runNum = 0;
+float32 finalResistance = 0;
+float32 finalCapacitance = 0;
 
 // Current mapping variables
 //float32 Rs = 0.02;
@@ -304,7 +311,8 @@ interrupt void TimerISR(void){
 	// Reset the counter if we have reached the bounds of our data Array
 	if(counter >= 999){
 		if(deltaTcomputed == 0){
-			//EPwm1Regs.CMPA.half.CMPA = (Uint16)TBPRD*1; // Compare A = 350 TBCLK counts
+			EPwm1Regs.CMPA.half.CMPA = (Uint16)TBPRD*1; // Compare A = 350 TBCLK counts
+			delay(100);
 			deltaTcomputed = 1;
 			// If dataMax is still 0, that means we have not yet computed our rise time, so let's do that now
 			deltaT = getDeltaT();
@@ -315,6 +323,8 @@ interrupt void TimerISR(void){
 		}
 
 		else if(deltaTcomputed == 1 && resistanceComputed == 0) {
+			EPwm1Regs.CMPA.half.CMPA = (Uint16)TBPRD*.5;
+			delay(1000);
 			resistanceComputed = 1;
 			// This means we have already computed the rise time, and all we need to do now is compute the resistance
 //			float32 dataAverage2 = 1000.0;
@@ -324,6 +334,33 @@ interrupt void TimerISR(void){
 			// Let's get capacitance!!!!
 			float32 magicConstant = 2.197;
 			capacitance = deltaT/(magicConstant*resistance);
+
+			resistanceArray[runNum] = resistance;
+			capacitanceArray[runNum] = capacitance;
+
+			runNum = runNum + 1;
+			if(runNum < 10){
+				counter = 0;
+				deltaTcomputed = 0;
+				resistanceComputed = 0;
+			}
+
+			if(runNum == 10){
+				int i;
+				float32 resSum = 0;
+				for(i=0; i<10; i++){
+					resSum = resSum + resistanceArray[i];
+				}
+				finalResistance = resSum/10;
+
+				float32 capSum = 0;
+				int j;
+				for(j=0; j<10; j++){
+					capSum = capSum + capacitanceArray[j];
+				}
+				finalCapacitance = capSum/10;
+
+			}
 		}
 	}
 
@@ -403,7 +440,7 @@ float32 getDeltaT(){
 
 	// Lets calculate delta T by
 	Uint16 discreteSampleLength = endpoint - startpoint;
-	float32 sampleDuration = 1.8e-6;//2.222e-6;
+	float32 sampleDuration = 1e-6;//2.222e-6;
 	return discreteSampleLength*sampleDuration;
 }
 
@@ -413,14 +450,14 @@ float32 getResistance(){
 	// Average data array only for non-outlier samples
 	Uint32 sum = 0;
 	int i;
-	for(i=0; i < 999; i++){
+	for(i=300; i < 999; i++){
 		sum = sum + dataArray[i];
 	}
 
-	dataAverage = sum/1000.0;
+	dataAverage = sum/700.0;
 	// Define Rknown
-	float32 Rknown = 160000;//15000.0; //15kOhms
-	float32 scalingFactor = 0.000725;//0.000893;//0.00075; // Converts ADC integer measurement value to actual voltage
+	float32 Rknown = 9860;//160000;//15000.0; //15kOhms
+	float32 scalingFactor = 0.000806;//725;//0.000893;//0.00075; // Converts ADC integer measurement value to actual voltage
 
 	Vout = scalingFactor*dataAverage;
 	// compute I according to the following formula: I = (3.3 - Vout)/Rknown
@@ -429,3 +466,10 @@ float32 getResistance(){
 	return Vout/current;
 }
 
+void delay(int cycles){
+	int i = 0;
+	while(i<cycles){
+		asm(" NOP");
+		i = i + 1;
+	}
+}
